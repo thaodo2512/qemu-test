@@ -31,12 +31,12 @@ cd /home/thaomeo/Documents/op
 # Host: server on TCP port
 ./setup.sh build --pristine=always \
   -b qemu_x86 samples/subsys/pmci/mctp/host -d build/mctp_host \
-  -- -DQEMU_EXTRA_FLAGS="-serial tcp::${MCTP_PORT:-4321},server,nowait,nodelay"
+  -- -DQEMU_EXTRA_FLAGS="-serial tcp:127.0.0.1:${MCTP_PORT:-4321},server=on,wait=off,nodelay"
 
 # Endpoint: client connects to host port
 ./setup.sh build --pristine=always \
   -b qemu_x86 samples/subsys/pmci/mctp/endpoint -d build/mctp_endpoint \
-  -- -DQEMU_EXTRA_FLAGS="-serial tcp:127.0.0.1:${MCTP_PORT:-4321},nodelay"
+  -- -DQEMU_EXTRA_FLAGS="-serial tcp:127.0.0.1:${MCTP_PORT:-4321},wait=on,nodelay"
 ```
 
 ## Running (two terminals)
