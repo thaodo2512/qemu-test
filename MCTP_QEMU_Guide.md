@@ -28,15 +28,15 @@ If you rerun after it is already applied, `git am` will fail; thatâ€™s expectedâ
 ## Build commands (host listens, endpoint connects)
 ```bash
 cd /home/thaomeo/Documents/op
-# Host: server on TCP port
+# Host: server on TCP port (UART1 over chardev socket)
 ./setup.sh build --pristine=always \
   -b qemu_x86 samples/subsys/pmci/mctp/host -d build/mctp_host \
-  -- -DQEMU_EXTRA_FLAGS="-serial tcp:127.0.0.1:${MCTP_PORT:-4321},server=on,wait=off,nodelay"
+  -- -DQEMU_EXTRA_FLAGS="-chardev socket,id=uart1,host=0.0.0.0,port=${MCTP_PORT:-4321},server=on,wait=on,nodelay=on -serial chardev:uart1 -no-shutdown"
 
 # Endpoint: client connects to host port
 ./setup.sh build --pristine=always \
   -b qemu_x86 samples/subsys/pmci/mctp/endpoint -d build/mctp_endpoint \
-  -- -DQEMU_EXTRA_FLAGS="-serial tcp:127.0.0.1:${MCTP_PORT:-4321},wait=on,nodelay"
+  -- -DQEMU_EXTRA_FLAGS="-chardev socket,id=uart1,host=127.0.0.1,port=${MCTP_PORT:-4321},server=off,wait=off,nodelay=on -serial chardev:uart1 -no-shutdown"
 ```
 
 ## Running (two terminals)
