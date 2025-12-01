@@ -31,12 +31,12 @@ cd /home/thaomeo/Documents/op
 # Host: server on TCP port (UART1 over chardev socket)
 ./setup.sh build --pristine=always \
   -b qemu_x86 samples/subsys/pmci/mctp/host -d build/mctp_host \
-  -- -DQEMU_EXTRA_FLAGS="-chardev socket,id=uart1,host=0.0.0.0,port=${MCTP_PORT:-4321},server=on,wait=on,nodelay=on -serial chardev:uart1 -no-shutdown"
+  -- -DQEMU_EXTRA_FLAGS="-chardev;socket,id=uart1,host=0.0.0.0,port=${MCTP_PORT:-4321},server=on,wait=on,nodelay=on;-serial;chardev:uart1;-no-shutdown"
 
 # Endpoint: client connects to host port
 ./setup.sh build --pristine=always \
   -b qemu_x86 samples/subsys/pmci/mctp/endpoint -d build/mctp_endpoint \
-  -- -DQEMU_EXTRA_FLAGS="-chardev socket,id=uart1,host=127.0.0.1,port=${MCTP_PORT:-4321},server=off,reconnect=1,nodelay=on -serial chardev:uart1 -no-shutdown"
+  -- -DQEMU_EXTRA_FLAGS="-chardev;socket,id=uart1,host=127.0.0.1,port=${MCTP_PORT:-4321},server=off,reconnect=1,nodelay=on;-serial;chardev:uart1;-no-shutdown"
 ```
 
 ## Running (two terminals)
@@ -55,6 +55,7 @@ MCTP_PORT=4321 ./setup.sh qemu-test -d build/mctp_host
 - Host console: `I: received message world for endpoint 10, msg_tag 0, len 6`
 
 ## Troubleshooting
+- If QEMU errors with “invalid option”, make sure `QEMU_EXTRA_FLAGS` is semicolon-separated so CMake passes each flag separately (see commands above). You can confirm in the build tree: `grep -n \"-chardev socket\" build/mctp_endpoint/build.ninja` (and host accordingly) — the flags should appear without backslash-escaped spaces.
 - QEMU 10 rejects `wait=` in client mode (`server=off`); use the `reconnect=` form shown above and rebuild if you see an “invalid option” or “wait option is incompatible” error.
 - Port busy: choose another `MCTP_PORT`, rebuild with `--pristine=always`.
 - No traffic: confirm overlays map `arduino_serial` to `uart1` in each build (`grep -n arduino_serial build/*/zephyr/zephyr.dts`).
