@@ -1,0 +1,39 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Your Name <you@example.com>
+Date: Tue, 17 Dec 2024 00:00:00 +0000
+Subject: [PATCH] mctp: enable async UART build and fix init include
+
+- pull in <zephyr/init.h> so SYS_INIT_NAMED is visible in mctp_memory.c
+- mark NS16550 as async-capable to satisfy CONFIG_UART_ASYNC_API/MCTP_UART
+
+---
+ drivers/serial/Kconfig.ns16550 | 1 +
+ subsys/pmci/mctp/mctp_memory.c | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/drivers/serial/Kconfig.ns16550 b/drivers/serial/Kconfig.ns16550
+index 4c6676cdab6..bfe03950a73 100644
+--- a/drivers/serial/Kconfig.ns16550
++++ b/drivers/serial/Kconfig.ns16550
+@@ -5,6 +5,7 @@ menuconfig UART_NS16550
+ 	default y
+ 	depends on DT_HAS_NS16550_ENABLED
+ 	select SERIAL_HAS_DRIVER
++	select SERIAL_SUPPORT_ASYNC
+ 	select SERIAL_SUPPORT_INTERRUPT
+ 	select PINCTRL if $(dt_compat_any_has_prop,$(DT_COMPAT_NS16550),pinctrl-0)
+ 	help
+ diff --git a/subsys/pmci/mctp/mctp_memory.c b/subsys/pmci/mctp/mctp_memory.c
+index 356525bd0a4..99bcb841981 100644
+--- a/subsys/pmci/mctp/mctp_memory.c
++++ b/subsys/pmci/mctp/mctp_memory.c
+@@ -7,6 +7,7 @@
+ 
+ #include <zephyr/spinlock.h>
+ #include <zephyr/sys/sys_heap.h>
++#include <zephyr/init.h>
+ #include <libmctp.h>
+ 
+ static uint8_t MCTP_MEM[CONFIG_MCTP_HEAP_SIZE];
+-- 
+2.34.1
