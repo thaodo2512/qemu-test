@@ -79,6 +79,17 @@ case "$1" in
             "${DOCKER_IMAGE}" \
             west update
 
+        # Prompt for git user identity for the Zephyr workspace (required for git am)
+        while [ -z "${GIT_USER_NAME}" ]; do
+            read -p "Enter git user.name for Zephyr workspace: " GIT_USER_NAME
+        done
+        while [ -z "${GIT_USER_EMAIL}" ]; do
+            read -p "Enter git user.email for Zephyr workspace: " GIT_USER_EMAIL
+        done
+
+        run_docker git config user.name "${GIT_USER_NAME}"
+        run_docker git config user.email "${GIT_USER_EMAIL}"
+
         # Note: Skipped 'west zephyr-export' as it's optional and not required for Docker-based builds inside the workspace.
         # It registers Zephyr for external CMake find_package, but west build handles it internally.
 
