@@ -36,7 +36,7 @@ cd /home/thaomeo/Documents/op
 # Endpoint: client connects to host port
 ./setup.sh build --pristine=always \
   -b qemu_x86 samples/subsys/pmci/mctp/endpoint -d build/mctp_endpoint \
-  -- -DQEMU_EXTRA_FLAGS="-chardev socket,id=uart1,host=127.0.0.1,port=${MCTP_PORT:-4321},server=off,wait=off,nodelay=on -serial chardev:uart1 -no-shutdown"
+  -- -DQEMU_EXTRA_FLAGS="-chardev socket,id=uart1,host=127.0.0.1,port=${MCTP_PORT:-4321},server=off,reconnect=1,nodelay=on -serial chardev:uart1 -no-shutdown"
 ```
 
 ## Running (two terminals)
@@ -55,9 +55,10 @@ MCTP_PORT=4321 ./setup.sh qemu-test -d build/mctp_host
 - Host console: `I: received message world for endpoint 10, msg_tag 0, len 6`
 
 ## Troubleshooting
+- QEMU 10 rejects `wait=` in client mode (`server=off`); use the `reconnect=` form shown above and rebuild if you see an “invalid option” or “wait option is incompatible” error.
 - Port busy: choose another `MCTP_PORT`, rebuild with `--pristine=always`.
 - No traffic: confirm overlays map `arduino_serial` to `uart1` in each build (`grep -n arduino_serial build/*/zephyr/zephyr.dts`).
-- Stuck waiting: add `,wait=off` on the client side; ensure listener started first.
+- Stuck waiting: the client uses `reconnect=1`; start the listener first or bump the reconnect interval if you want longer retries.
 - Deeper debug: add `-d guest_errors -D /workdir/qemu.log` to `QEMU_EXTRA_FLAGS`.
 
 ## Cleanup
