@@ -40,15 +40,22 @@ cd /home/thaomeo/Documents/op
 ```
 
 ## Running (two terminals)
-- Terminal 1 (host or endpoint depending on who is server) — share host network so both QEMUs see the same loopback port:
-```bash
-DOCKER_EXTRA_ARGS="--network host" MCTP_PORT=4321 ./setup.sh qemu-test -d build/mctp_endpoint
-```
-- Terminal 2:
+- Terminal 1 (start host listener first) — share host network so both QEMUs see the same loopback port:
 ```bash
 DOCKER_EXTRA_ARGS="--network host" MCTP_PORT=4321 ./setup.sh qemu-test -d build/mctp_host
 ```
+- Terminal 2 (start endpoint client second):
+```bash
+DOCKER_EXTRA_ARGS="--network host" MCTP_PORT=4321 ./setup.sh qemu-test -d build/mctp_endpoint
+```
 - Exit QEMU: `Ctrl+a`, then `x`.
+
+### One-shot helper (tmux)
+If you prefer, use the helper to spawn both panes automatically (host first, endpoint second):
+```bash
+./run_mctp_qemu.sh
+```
+This defaults to `--network host` and `MCTP_PORT=4321`. Update `DOCKER_EXTRA_ARGS` or `MCTP_PORT` in your environment if needed before running.
 
 ## Verification (expected logs)
 - Endpoint console: `I: got mctp message hello for eid 20, replying to 5 with "world"`

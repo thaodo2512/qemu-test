@@ -1,0 +1,189 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Your Name <you@example.com>
+Date: Thu, 20 Feb 2025 00:00:00 +0000
+Subject: [PATCH] mctp_uart: fall back to IRQ/polling and lower log volume
+
+- add RX/TX fallbacks for platforms where async UART isn’t available, so
+  MCTP over UART still works via interrupt-driven RX and polled TX
+- lower MCTP UART logging to INF in the qemu_x86 samples to avoid per-byte
+  debug spam, and enable interrupt-driven UART in both samples
+---
+ include/zephyr/pmci/mctp/mctp_uart.h              |  9 +++
+ samples/subsys/pmci/mctp/endpoint/prj.conf        |  4 +-
+ samples/subsys/pmci/mctp/host/prj.conf            |  4 +-
+ subsys/pmci/mctp/mctp_uart.c                      | 82 +++++++++++++++++++----
+ 4 files changed, 82 insertions(+), 17 deletions(-)
+
+diff --git a/include/zephyr/pmci/mctp/mctp_uart.h b/include/zephyr/pmci/mctp/mctp_uart.h
+index 0aeee195e7b..143bfc03010 100644
+--- a/include/zephyr/pmci/mctp/mctp_uart.h
++++ b/include/zephyr/pmci/mctp/mctp_uart.h
+@@ -39,6 +39,9 @@ struct mctp_binding_uart {
+ 		STATE_WAIT_SYNC_END,
+ 	} rx_state;
+ 	int rx_res;
++	bool rx_started;
++	bool use_async;
++	bool irq_ready;
+ 
+ 	/* staging buffer for tx */
+ 	uint8_t tx_buf[256];
+@@ -80,6 +83,9 @@ int mctp_uart_tx(struct mctp_binding *binding, struct mctp_pktbuf *pkt);
+ 				.rx_state = STATE_WAIT_SYNC_START,                                 \
+ 				.rx_pkt = NULL,                                                    \
+ 				.rx_res = 0,                                                       \
++				.rx_started = false,                                               \
++				.use_async = IS_ENABLED(CONFIG_UART_ASYNC_API),                    \
++				.irq_ready = false,                                                \
+ 				.tx_res = 0,                                                       \
+ 	};
+ 
+diff --git a/samples/subsys/pmci/mctp/endpoint/prj.conf b/samples/subsys/pmci/mctp/endpoint/prj.conf
+index 495c9ca12fa..7d0051156f3 100644
+--- a/samples/subsys/pmci/mctp/endpoint/prj.conf
++++ b/samples/subsys/pmci/mctp/endpoint/prj.conf
+@@ -1,8 +1,9 @@
+ CONFIG_SERIAL=y
+ CONFIG_UART_ASYNC_API=y
++CONFIG_UART_INTERRUPT_DRIVEN=y
+ CONFIG_MCTP=y
+ CONFIG_MCTP_UART=y
+ CONFIG_LOG=y
+ CONFIG_LOG_BUFFER_SIZE=4096
+-CONFIG_MCTP_LOG_LEVEL_DBG=y
++CONFIG_MCTP_LOG_LEVEL_INF=y
+ CONFIG_ISR_STACK_SIZE=4096
+diff --git a/samples/subsys/pmci/mctp/host/prj.conf b/samples/subsys/pmci/mctp/host/prj.conf
+index 341787ecbd3..ca52b6c1eae 100644
+--- a/samples/subsys/pmci/mctp/host/prj.conf
++++ b/samples/subsys/pmci/mctp/host/prj.conf
+@@ -1,8 +1,9 @@
+ # nothing here
+ CONFIG_SERIAL=y
+ CONFIG_UART_ASYNC_API=y
++CONFIG_UART_INTERRUPT_DRIVEN=y
+ CONFIG_MCTP=y
+ CONFIG_MCTP_UART=y
+-CONFIG_MCTP_LOG_LEVEL_DBG=y
++CONFIG_MCTP_LOG_LEVEL_INF=y
+ CONFIG_LOG=y
+ CONFIG_LOG_BUFFER_SIZE=4096
+diff --git a/subsys/pmci/mctp/mctp_uart.c b/subsys/pmci/mctp/mctp_uart.c
+index b77a4698508..e201f8c3a52 100644
+--- a/subsys/pmci/mctp/mctp_uart.c
++++ b/subsys/pmci/mctp/mctp_uart.c
+@@ -210,6 +210,7 @@ static void mctp_uart_consume(struct mctp_binding_uart *uart, uint8_t c)
+ 		MCTP_STATE_STRING[uart->rx_state], c);
+ }
+ 
++#if defined(CONFIG_UART_ASYNC_API)
+ static void mctp_uart_callback(const struct device *dev, struct uart_event *evt, void *userdata)
+ {
+ 	struct mctp_binding_uart *binding = userdata;
+@@ -253,15 +254,72 @@ static void mctp_uart_callback(const struct device *dev, struct uart_event *evt,
+ 		break;
+ 	}
+ }
++#endif
++
++#if defined(CONFIG_UART_INTERRUPT_DRIVEN)
++static void mctp_uart_isr(const struct device *dev, void *user_data)
++{
++	struct mctp_binding_uart *binding = user_data;
++
++	while (uart_irq_update(dev) && uart_irq_is_pending(dev)) {
++		if (uart_irq_rx_ready(dev)) {
++			uint8_t buf[32];
++			int len = uart_fifo_read(dev, buf, sizeof(buf));
++
++			for (int i = 0; i < len; i++) {
++				mctp_uart_consume(binding, buf[i]);
++			}
++		}
++	}
++}
++#endif
+ 
+ void mctp_uart_start_rx(struct mctp_binding_uart *uart)
+ {
+-	int res = uart_callback_set(uart->dev, mctp_uart_callback, uart);
++	if (uart->rx_started) {
++		return;
++	}
++
++#if defined(CONFIG_UART_ASYNC_API)
++	if (uart->use_async) {
++		int res = uart_callback_set(uart->dev, mctp_uart_callback, uart);
++
++		if (res == 0) {
++			uart->rx_buf_used[0] = true;
++			res = uart_rx_enable(uart->dev, uart->rx_buf[0],
++					     sizeof(uart->rx_buf[0]), 1000);
++		}
++
++		if (res == 0) {
++			uart->rx_started = true;
++			return;
++		}
++
++		LOG_WRN("Async UART RX unavailable (%d), falling back to interrupt mode", res);
++		uart->use_async = false;
++	}
++#endif
++
++#if defined(CONFIG_UART_INTERRUPT_DRIVEN)
++	if (!uart->irq_ready) {
++		uart_irq_callback_user_data_set(uart->dev, mctp_uart_isr, uart);
++		uart->irq_ready = true;
++	}
++
++	uart_irq_rx_enable(uart->dev);
++	uart->rx_started = true;
++#else
++	__ASSERT_NO_MSG(false);
++#endif
+ }
+ 
+-	__ASSERT_NO_MSG(res == 0);
+-	uart->rx_buf_used[0] = true;
+-	res = uart_rx_enable(uart->dev, uart->rx_buf[0], sizeof(uart->rx_buf[0]), 1000);
+-	__ASSERT_NO_MSG(res == 0);
++static int mctp_uart_tx_blocking(struct mctp_binding_uart *uart, size_t len)
++{
++	for (size_t i = 0; i < len; i++) {
++		uart_poll_out(uart->dev, uart->tx_buf[i]);
++	}
++
++	return 0;
+ }
+ 
+ int mctp_uart_tx(struct mctp_binding *b, struct mctp_pktbuf *pkt)
+@@ -308,14 +366,21 @@ int mctp_uart_tx(struct mctp_binding *b, struct mctp_pktbuf *pkt)
+ 
+ 	len += sizeof(*hdr) + sizeof(*tlr);
+ 
+-	int res = uart_tx(uart->dev, (const uint8_t *)uart->tx_buf, len, SYS_FOREVER_US);
++#if defined(CONFIG_UART_ASYNC_API)
++	if (uart->use_async) {
++		int res = uart_tx(uart->dev, (const uint8_t *)uart->tx_buf, len,
++				  SYS_FOREVER_US);
++
++		if (res == 0) {
++			return uart->tx_res;
++		}
+ 
+-	if (res != 0) {
+-		LOG_ERR("Failed sending data, %d", res);
+-		return res;
++		LOG_WRN("Async UART TX failed (%d), retrying with polled TX", res);
++		uart->use_async = false;
+ 	}
++#endif
+ 
+-	return uart->tx_res;
++	return mctp_uart_tx_blocking(uart, len);
+ }
+ 
+ int mctp_uart_start(struct mctp_binding *binding)
+-- 
+2.34.1
