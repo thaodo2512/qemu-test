@@ -1,18 +1,14 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: Your Name <you@example.com>
-Date: Thu, 20 Feb 2025 00:00:00 +0000
-Subject: [PATCH] mctp_uart: fall back to IRQ/polling and lower log volume
+From cadd540fe806bd752b5e7d75bc40b9dbd5ca86a0 Mon Sep 17 00:00:00 2001
+From: thao <thao2512@gmail.com>
+Date: Mon, 1 Dec 2025 10:39:47 +0700
+Subject: [PATCH] mctp_uart: async fallback + quieter logs
 
-- add RX/TX fallbacks for platforms where async UART isn’t available, so
-  MCTP over UART still works via interrupt-driven RX and polled TX
-- lower MCTP UART logging to INF in the qemu_x86 samples to avoid per-byte
-  debug spam, and enable interrupt-driven UART in both samples
 ---
- include/zephyr/pmci/mctp/mctp_uart.h              |  9 +++
- samples/subsys/pmci/mctp/endpoint/prj.conf        |  4 +-
- samples/subsys/pmci/mctp/host/prj.conf            |  4 +-
- subsys/pmci/mctp/mctp_uart.c                      | 82 +++++++++++++++++++----
- 4 files changed, 82 insertions(+), 17 deletions(-)
+ include/zephyr/pmci/mctp/mctp_uart.h       |  6 ++
+ samples/subsys/pmci/mctp/endpoint/prj.conf |  3 +-
+ samples/subsys/pmci/mctp/host/prj.conf     |  3 +-
+ subsys/pmci/mctp/mctp_uart.c               | 85 +++++++++++++++++++---
+ 4 files changed, 85 insertions(+), 12 deletions(-)
 
 diff --git a/include/zephyr/pmci/mctp/mctp_uart.h b/include/zephyr/pmci/mctp/mctp_uart.h
 index 0aeee195e7b..143bfc03010 100644
@@ -142,18 +138,18 @@ index b77a4698508..e201f8c3a52 100644
 +#else
 +	__ASSERT_NO_MSG(false);
 +#endif
- }
- 
--	__ASSERT_NO_MSG(res == 0);
--	uart->rx_buf_used[0] = true;
--	res = uart_rx_enable(uart->dev, uart->rx_buf[0], sizeof(uart->rx_buf[0]), 1000);
--	__ASSERT_NO_MSG(res == 0);
++}
++
 +static int mctp_uart_tx_blocking(struct mctp_binding_uart *uart, size_t len)
 +{
 +	for (size_t i = 0; i < len; i++) {
 +		uart_poll_out(uart->dev, uart->tx_buf[i]);
 +	}
-+
+ 
+-	__ASSERT_NO_MSG(res == 0);
+-	uart->rx_buf_used[0] = true;
+-	res = uart_rx_enable(uart->dev, uart->rx_buf[0], sizeof(uart->rx_buf[0]), 1000);
+-	__ASSERT_NO_MSG(res == 0);
 +	return 0;
  }
  
@@ -187,3 +183,4 @@ index b77a4698508..e201f8c3a52 100644
  int mctp_uart_start(struct mctp_binding *binding)
 -- 
 2.34.1
+
