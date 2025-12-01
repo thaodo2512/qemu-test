@@ -16,6 +16,8 @@ WORKSPACE_DIR="$(pwd)/zephyrproject"  # Workspace directory (adjust if needed)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PATCH_DIR="${SCRIPT_DIR}/patches"
 ZEPHYR_SDK_DIR="/opt/toolchains/zephyr-sdk-0.17.4"  # Path to SDK in the Docker image (updated to latest known version)
+# Extra docker run flags (e.g., DOCKER_EXTRA_ARGS="--network host")
+DOCKER_EXTRA_ARGS="${DOCKER_EXTRA_ARGS:-}"
 
 # Get host UID and GID to avoid permission issues with mounted volumes
 HOST_UID=$(id -u)
@@ -42,7 +44,7 @@ EOF
 
 # Function to run commands inside the Docker container
 run_docker() {
-    docker run --rm ${DOCKER_TTY_FLAG} \
+    docker run --rm ${DOCKER_TTY_FLAG} ${DOCKER_EXTRA_ARGS} \
         --user "${HOST_UID}:${HOST_GID}" \
         --env ZEPHYR_SDK_INSTALL_DIR="${ZEPHYR_SDK_DIR}" \
         --env CMAKE_PREFIX_PATH="${ZEPHYR_SDK_DIR}/cmake" \

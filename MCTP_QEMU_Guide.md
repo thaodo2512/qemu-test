@@ -40,13 +40,13 @@ cd /home/thaomeo/Documents/op
 ```
 
 ## Running (two terminals)
-- Terminal 1 (host or endpoint depending on who is server):
+- Terminal 1 (host or endpoint depending on who is server) — share host network so both QEMUs see the same loopback port:
 ```bash
-MCTP_PORT=4321 ./setup.sh qemu-test -d build/mctp_endpoint
+DOCKER_EXTRA_ARGS="--network host" MCTP_PORT=4321 ./setup.sh qemu-test -d build/mctp_endpoint
 ```
 - Terminal 2:
 ```bash
-MCTP_PORT=4321 ./setup.sh qemu-test -d build/mctp_host
+DOCKER_EXTRA_ARGS="--network host" MCTP_PORT=4321 ./setup.sh qemu-test -d build/mctp_host
 ```
 - Exit QEMU: `Ctrl+a`, then `x`.
 
@@ -55,7 +55,8 @@ MCTP_PORT=4321 ./setup.sh qemu-test -d build/mctp_host
 - Host console: `I: received message world for endpoint 10, msg_tag 0, len 6`
 
 ## Troubleshooting
-- If QEMU errors with “invalid option”, make sure `QEMU_EXTRA_FLAGS` is semicolon-separated so CMake passes each flag separately (see commands above). You can confirm in the build tree: `grep -n \"-chardev socket\" build/mctp_endpoint/build.ninja` (and host accordingly) — the flags should appear without backslash-escaped spaces.
+- Connection refused: ensure both runs include `DOCKER_EXTRA_ARGS="--network host"` so they share the host network namespace; start the host first and watch for “QEMU waiting for connection on ...:4321” before launching the endpoint.
+- If QEMU errors with “invalid option”, make sure `QEMU_EXTRA_FLAGS` is semicolon-separated so CMake passes each flag separately (see commands above). You can confirm in the build tree: `grep -n "-chardev socket" build/mctp_endpoint/build.ninja` (and host accordingly) — the flags should appear without backslash-escaped spaces.
 - QEMU 10 rejects `wait=` in client mode (`server=off`); use the `reconnect=` form shown above and rebuild if you see an “invalid option” or “wait option is incompatible” error.
 - Port busy: choose another `MCTP_PORT`, rebuild with `--pristine=always`.
 - No traffic: confirm overlays map `arduino_serial` to `uart1` in each build (`grep -n arduino_serial build/*/zephyr/zephyr.dts`).
