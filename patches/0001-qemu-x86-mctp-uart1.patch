@@ -1,0 +1,51 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Your Name <you@example.com>
+Date: Mon, 1 Dec 2025 00:00:00 +0000
+Subject: [PATCH] mctp: add qemu_x86 UART1 overlays for host and endpoint
+
+Use UART1 for MCTP so the console on UART0 stays free. These overlays
+enable `arduino_serial` on qemu_x86 and set a default baudrate.
+---
+ samples/subsys/pmci/mctp/endpoint/boards/qemu_x86.overlay | 11 +++++++++++
+ samples/subsys/pmci/mctp/host/boards/qemu_x86.overlay     | 11 +++++++++++
+ 2 files changed, 22 insertions(+)
+ create mode 100644 samples/subsys/pmci/mctp/endpoint/boards/qemu_x86.overlay
+ create mode 100644 samples/subsys/pmci/mctp/host/boards/qemu_x86.overlay
+
+diff --git a/samples/subsys/pmci/mctp/endpoint/boards/qemu_x86.overlay b/samples/subsys/pmci/mctp/endpoint/boards/qemu_x86.overlay
+new file mode 100644
+index 0000000000..1111111111
+--- /dev/null
++++ b/samples/subsys/pmci/mctp/endpoint/boards/qemu_x86.overlay
+@@ -0,0 +1,11 @@
++/ {
++	aliases {
++		arduino-serial = &arduino_serial;
++	};
++};
++
++/* Keep console on UART0; use UART1 for MCTP over UART */
++arduino_serial: &uart1 {
++	status = "okay";
++	current-speed = <115200>;
++};
+diff --git a/samples/subsys/pmci/mctp/host/boards/qemu_x86.overlay b/samples/subsys/pmci/mctp/host/boards/qemu_x86.overlay
+new file mode 100644
+index 0000000000..2222222222
+--- /dev/null
++++ b/samples/subsys/pmci/mctp/host/boards/qemu_x86.overlay
+@@ -0,0 +1,11 @@
++/ {
++	aliases {
++		arduino-serial = &arduino_serial;
++	};
++};
++
++/* Keep console on UART0; use UART1 for MCTP over UART */
++arduino_serial: &uart1 {
++	status = "okay";
++	current-speed = <115200>;
++};
+-- 
+2.34.1
+
