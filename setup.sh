@@ -13,6 +13,8 @@
 # Configuration
 DOCKER_IMAGE="zephyrprojectrtos/ci:main"  # Official Zephyr CI image (slimmer, no VNC for build-only workflows)
 WORKSPACE_DIR="$(pwd)/zephyrproject"  # Workspace directory (adjust if needed)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+MCTP_PATCH="${SCRIPT_DIR}/patches/0001-qemu-x86-mctp-uart1.patch"
 ZEPHYR_SDK_DIR="/opt/toolchains/zephyr-sdk-0.17.4"  # Path to SDK in the Docker image (updated to latest known version)
 
 # Get host UID and GID to avoid permission issues with mounted volumes
@@ -107,6 +109,19 @@ case "$1" in
         run_docker west build -t run "$@"
         ;;
 
+    apply-mctp-patch)
+        if [ ! -f "${MCTP_PATCH}" ]; then
+            echo "Patch not found at ${MCTP_PATCH}"
+            exit 1
+        fi
+        if [ ! -d "${WORKSPACE_DIR}/zephyr" ]; then
+            echo "Zephyr workspace not found at ${WORKSPACE_DIR}/zephyr. Run '$0 init' first."
+            exit 1
+        fi
+        cp "${MCTP_PATCH}" "${WORKSPACE_DIR}/"
+        run_docker git am ../"$(basename "${MCTP_PATCH}")"
+        ;;
+
     clean)
         echo "=== Cleanup ==="
 
@@ -149,6 +164,7 @@ case "$1" in
         echo "  build         Build a project (pass west build args)"
         echo "  ci-test       Run local CI with Twister (pass west twister args)"
         echo "  qemu-test     Run built app in QEMU"
+        echo "  apply-mctp-patch  Copy and apply the qemu_x86 MCTP UART1 overlay patch to zephyr"
         echo "  clean         Interactively delete workspace and/or Docker image"
         exit 1
         ;;
