@@ -21,6 +21,21 @@ ZEPHYR_SDK_DIR="/opt/toolchains/zephyr-sdk-0.17.4"  # Path to SDK in the Docker 
 HOST_UID=$(id -u)
 HOST_GID=$(id -g)
 
+usage() {
+    cat <<EOF
+Usage: $0 {init|build|ci-test|qemu-test|apply-mctp-patch|restore-zephyr|clean} [options]
+
+Commands:
+  init              Initialize Zephyr workspace from scratch
+  build             Build a project (pass west build args)
+  ci-test           Run local CI with Twister (pass west twister args)
+  qemu-test         Run built app in QEMU
+  apply-mctp-patch  Copy and apply all .patch files from ./patches into the Zephyr workspace
+  restore-zephyr    Reset Zephyr to origin/main and delete copied .patch files in workspace root
+  clean             Interactively delete workspace and/or Docker image
+EOF
+}
+
 # Function to run commands inside the Docker container
 run_docker() {
     docker run --rm -it \
@@ -198,16 +213,7 @@ case "$1" in
         ;;
 
     *)
-        echo "Usage: $0 {init|build|ci-test|qemu-test|clean} [options]"
-        echo ""
-        echo "Commands:"
-        echo "  init          Initialize Zephyr workspace from scratch"
-        echo "  build         Build a project (pass west build args)"
-        echo "  ci-test       Run local CI with Twister (pass west twister args)"
-        echo "  qemu-test     Run built app in QEMU"
-        echo "  apply-mctp-patch  Copy and apply all .patch files from ./patches into the Zephyr workspace"
-        echo "  restore-zephyr    Reset Zephyr to origin/main and delete copied .patch files in workspace root"
-        echo "  clean         Interactively delete workspace and/or Docker image"
+        usage
         exit 1
         ;;
 esac
