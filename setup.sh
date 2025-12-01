@@ -120,6 +120,20 @@ case "$1" in
         run_docker west build -t run "$@"
         ;;
 
+    restore-zephyr)
+        if [ ! -d "${WORKSPACE_DIR}/zephyr/.git" ]; then
+            echo "Zephyr workspace not found at ${WORKSPACE_DIR}/zephyr. Run '$0 init' first."
+            exit 1
+        fi
+
+        echo "=== Restoring Zephyr workspace to origin/main and removing copied patches ==="
+        run_docker git -C /workdir/zephyr fetch origin main
+        run_docker git -C /workdir/zephyr reset --hard origin/main
+        run_docker git -C /workdir/zephyr clean -fdx
+        find "${WORKSPACE_DIR}" -maxdepth 1 -type f -name '*.patch' -delete
+        echo "Workspace restored."
+        ;;
+
     apply-mctp-patch)
         if [ ! -d "${PATCH_DIR}" ]; then
             echo "Patch directory not found at ${PATCH_DIR}"
@@ -192,6 +206,7 @@ case "$1" in
         echo "  ci-test       Run local CI with Twister (pass west twister args)"
         echo "  qemu-test     Run built app in QEMU"
         echo "  apply-mctp-patch  Copy and apply all .patch files from ./patches into the Zephyr workspace"
+        echo "  restore-zephyr    Reset Zephyr to origin/main and delete copied .patch files in workspace root"
         echo "  clean         Interactively delete workspace and/or Docker image"
         exit 1
         ;;
