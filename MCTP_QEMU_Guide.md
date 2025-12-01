@@ -18,34 +18,12 @@ This guide shows how to run two `qemu_x86` Zephyr instances inside the official 
 ./setup.sh init
 ```
 
-## Devicetree overlays for qemu_x86 (use UART1 for MCTP)
+## Apply UART1 overlay patch (recommended)
+- This applies `patches/0001-qemu-x86-mctp-uart1.patch` into the Zephyr workspace, adding `qemu_x86.overlay` for host and endpoint to map `arduino_serial` to UART1 (leaving console on UART0).
 ```bash
-cat > zephyrproject/zephyr/samples/subsys/pmci/mctp/host/boards/qemu_x86.overlay <<'EOF'
-/ {
-	aliases {
-		arduino-serial = &arduino_serial;
-	};
-};
-
-arduino_serial: &uart1 {
-	status = "okay";
-	current-speed = <115200>;
-};
-EOF
-
-cat > zephyrproject/zephyr/samples/subsys/pmci/mctp/endpoint/boards/qemu_x86.overlay <<'EOF'
-/ {
-	aliases {
-		arduino-serial = &arduino_serial;
-	};
-};
-
-arduino_serial: &uart1 {
-	status = "okay";
-	current-speed = <115200>;
-};
-EOF
+./setup.sh apply-mctp-patch
 ```
+If you rerun after it is already applied, `git am` will fail; that’s expected—skip if already applied.
 
 ## Build commands (host listens, endpoint connects)
 ```bash
