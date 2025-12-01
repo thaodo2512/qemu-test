@@ -14,7 +14,7 @@
 DOCKER_IMAGE="zephyrprojectrtos/ci:main"  # Official Zephyr CI image (slimmer, no VNC for build-only workflows)
 WORKSPACE_DIR="$(pwd)/zephyrproject"  # Workspace directory (adjust if needed)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-MCTP_PATCH="${SCRIPT_DIR}/patches/0001-qemu-x86-mctp-uart1.patch"
+PATCH_DIR="${SCRIPT_DIR}/patches"
 ZEPHYR_SDK_DIR="/opt/toolchains/zephyr-sdk-0.17.4"  # Path to SDK in the Docker image (updated to latest known version)
 
 # Get host UID and GID to avoid permission issues with mounted volumes
@@ -121,16 +121,32 @@ case "$1" in
         ;;
 
     apply-mctp-patch)
-        if [ ! -f "${MCTP_PATCH}" ]; then
-            echo "Patch not found at ${MCTP_PATCH}"
+        if [ ! -d "${PATCH_DIR}" ]; then
+            echo "Patch directory not found at ${PATCH_DIR}"
             exit 1
         fi
         if [ ! -d "${WORKSPACE_DIR}/zephyr" ]; then
             echo "Zephyr workspace not found at ${WORKSPACE_DIR}/zephyr. Run '$0 init' first."
             exit 1
         fi
-        cp "${MCTP_PATCH}" "${WORKSPACE_DIR}/"
-        run_docker git am ../"$(basename "${MCTP_PATCH}")"
+
+        shopt -s nullglob
+        PATCH_FILES=("${PATCH_DIR}"/*.patch)
+        shopt -u nullglob
+
+        if [ ${#PATCH_FILES[@]} -eq 0 ]; then
+            echo "No .patch files found in ${PATCH_DIR}"
+            exit 1
+        fi
+
+        PATCH_ARGS=()
+        for pf in "${PATCH_FILES[@]}"; do
+            cp "${pf}" "${WORKSPACE_DIR}/"
+            PATCH_ARGS+=("../$(basename "${pf}")")
+        done
+
+        # Apply all patches in order; git am will stop on conflicts/duplicates
+        run_docker git am "${PATCH_ARGS[@]}"
         ;;
 
     clean)
@@ -175,7 +191,7 @@ case "$1" in
         echo "  build         Build a project (pass west build args)"
         echo "  ci-test       Run local CI with Twister (pass west twister args)"
         echo "  qemu-test     Run built app in QEMU"
-        echo "  apply-mctp-patch  Copy and apply the qemu_x86 MCTP UART1 overlay patch to zephyr"
+        echo "  apply-mctp-patch  Copy and apply all .patch files from ./patches into the Zephyr workspace"
         echo "  clean         Interactively delete workspace and/or Docker image"
         exit 1
         ;;
