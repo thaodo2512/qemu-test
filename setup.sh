@@ -20,6 +20,10 @@ ZEPHYR_SDK_DIR="/opt/toolchains/zephyr-sdk-0.17.4"  # Path to SDK in the Docker 
 # Get host UID and GID to avoid permission issues with mounted volumes
 HOST_UID=$(id -u)
 HOST_GID=$(id -g)
+DOCKER_TTY_FLAG="-i"
+if [ -t 0 ]; then
+    DOCKER_TTY_FLAG="-it"
+fi
 
 usage() {
     cat <<EOF
@@ -38,7 +42,7 @@ EOF
 
 # Function to run commands inside the Docker container
 run_docker() {
-    docker run --rm -it \
+    docker run --rm ${DOCKER_TTY_FLAG} \
         --user "${HOST_UID}:${HOST_GID}" \
         --env ZEPHYR_SDK_INSTALL_DIR="${ZEPHYR_SDK_DIR}" \
         --env CMAKE_PREFIX_PATH="${ZEPHYR_SDK_DIR}/cmake" \
@@ -74,7 +78,7 @@ case "$1" in
         mkdir -p "${WORKSPACE_DIR}"
         cd "${WORKSPACE_DIR}" || exit 1
 
-        docker run --rm -it \
+        docker run --rm ${DOCKER_TTY_FLAG} \
             --user "${HOST_UID}:${HOST_GID}" \
             --env ZEPHYR_SDK_INSTALL_DIR="${ZEPHYR_SDK_DIR}" \
             --env CMAKE_PREFIX_PATH="${ZEPHYR_SDK_DIR}/cmake" \
@@ -84,7 +88,7 @@ case "$1" in
             "${DOCKER_IMAGE}" \
             west init -m https://github.com/zephyrproject-rtos/zephyr --mr main
 
-        docker run --rm -it \
+        docker run --rm ${DOCKER_TTY_FLAG} \
             --user "${HOST_UID}:${HOST_GID}" \
             --env ZEPHYR_SDK_INSTALL_DIR="${ZEPHYR_SDK_DIR}" \
             --env CMAKE_PREFIX_PATH="${ZEPHYR_SDK_DIR}/cmake" \
@@ -135,21 +139,11 @@ case "$1" in
         run_docker west build -t run "$@"
         ;;
 
-    restore-zephyr)
-        if [ ! -d "${WORKSPACE_DIR}/zephyr/.git" ]; then
-            echo "Zephyr workspace not found at ${WORKSPACE_DIR}/zephyr. Run '$0 init' first."
-            exit 1
-        fi
-
-        echo "=== Restoring Zephyr workspace to origin/main and removing copied patches ==="
-        run_docker git -C /workdir/zephyr fetch origin main
-        run_docker git -C /workdir/zephyr reset --hard origin/main
-        run_docker git -C /workdir/zephyr clean -fdx
-        find "${WORKSPACE_DIR}" -maxdepth 1 -type f -name '*.patch' -delete
-        echo "Workspace restored."
-        ;;
-
     apply-mctp-patch)
+        # Abort any previous git am in progress to avoid leftover state
+        run_docker git -C /workdir/zephyr am --abort >/dev/null 2>&1 || true
+        run_docker sh -c "rm -rf /workdir/zephyr/.git/rebase-apply /workdir/zephyr/.git/rebase-merge"
+
         if [ ! -d "${PATCH_DIR}" ]; then
             echo "Patch directory not found at ${PATCH_DIR}"
             exit 1
@@ -168,14 +162,37 @@ case "$1" in
             exit 1
         fi
 
-        PATCH_ARGS=()
         for pf in "${PATCH_FILES[@]}"; do
+            base_pf="../$(basename "${pf}")"
             cp "${pf}" "${WORKSPACE_DIR}/"
-            PATCH_ARGS+=("../$(basename "${pf}")")
-        done
 
-        # Apply all patches in order; git am will stop on conflicts/duplicates
-        run_docker git am "${PATCH_ARGS[@]}"
+            echo "Applying patch ${base_pf}..."
+            if ! run_docker git -C /workdir/zephyr apply --check "${base_pf}" >/dev/null 2>&1; then
+                echo "Patch ${base_pf} does not apply cleanly to the Zephyr tree, skipping."
+                continue
+            fi
+
+            if ! run_docker git am "${base_pf}"; then
+                echo "Patch ${base_pf} failed, aborting apply for this patch (continuing with others)..."
+                run_docker git -C /workdir/zephyr am --abort >/dev/null 2>&1 || true
+            fi
+        done
+        ;;
+
+    restore-zephyr)
+        if [ ! -d "${WORKSPACE_DIR}/zephyr/.git" ]; then
+            echo "Zephyr workspace not found at ${WORKSPACE_DIR}/zephyr. Run '$0 init' first."
+            exit 1
+        fi
+
+        echo "=== Restoring Zephyr workspace to origin/main and removing copied patches ==="
+        run_docker git -C /workdir/zephyr am --abort >/dev/null 2>&1 || true
+        run_docker sh -c "rm -rf /workdir/zephyr/.git/rebase-apply /workdir/zephyr/.git/rebase-merge"
+        run_docker git -C /workdir/zephyr fetch origin main
+        run_docker git -C /workdir/zephyr reset --hard origin/main
+        run_docker git -C /workdir/zephyr clean -fdx
+        find "${WORKSPACE_DIR}" -maxdepth 1 -type f -name '*.patch' -delete
+        echo "Workspace restored."
         ;;
 
     clean)
