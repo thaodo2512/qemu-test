@@ -1,91 +1,90 @@
 #!/bin/bash
-set -e  # Exit immediately if any command fails
+set -e
 
 # Default values
 APP_INPUT="pldm_sample" 
 TARGET_BOARD=""
 BUILD_DIR="build"
 WORKSPACE_ROOT="$PWD"
+DO_CHECK=0
 
-# Color codes for easier reading
+# Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# Function to display usage
 usage() {
     echo "Usage: $0 --target <board_name> [options]"
     echo "Options:"
-    echo "  --target <board>   Specify the board to build for (e.g., pldm_qemu)"
-    echo "  --app <dir>        Specify application directory (default: pldm_sample)"
-    echo "  --clean            Clean build directory before building"
-    echo "  --help             Show this help message"
+    echo "  --target <board>   Specify board (e.g., pldm_qemu)"
+    echo "  --app <dir>        Application directory (default: pldm_sample)"
+    echo "  --check            Run CI Check (Twister) instead of just building"
+    echo "  --clean            Clean build directory"
     exit 1
 }
 
-# Parse arguments
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --target) TARGET_BOARD="$2"; shift ;;
         --app) APP_INPUT="$2"; shift ;;
+        --check) DO_CHECK=1 ;;
         --clean) rm -rf "$BUILD_DIR"; shift ;;
         --help) usage ;;
-        *) echo "Unknown parameter: $1"; usage ;;
+        *) echo "Unknown: $1"; usage ;;
     esac
     shift
 done
 
 if [ -z "$TARGET_BOARD" ]; then
-    echo -e "${RED}Error: You must specify a target board.${NC}"
+    echo -e "${RED}Error: --target is required.${NC}"
     usage
 fi
 
-echo -e "${YELLOW}--- [DEBUG] Starting Path Resolution ---${NC}"
-echo "Current Workspace Root (Host): $WORKSPACE_ROOT"
-echo "Raw Input App Path:            $APP_INPUT"
-
 # --- SMART PATH LOGIC ---
-
-# 1. Resolve absolute path of the App
 if [ -d "$APP_INPUT" ]; then
     APP_ABS_PATH=$(cd "$APP_INPUT" && pwd)
-    echo "Resolved Absolute App Path:    $APP_ABS_PATH"
 else
-    echo -e "${RED}❌ Error: Application directory '$APP_INPUT' not found on host.${NC}"
+    echo -e "${RED}Error: App dir '$APP_INPUT' not found.${NC}"
     exit 1
 fi
 
-# 2. Check if App is inside the Workspace
 if [[ "$APP_ABS_PATH" != "$WORKSPACE_ROOT"* ]]; then
-    echo -e "${RED}❌ Error: The application MUST be inside the current workspace.${NC}"
-    echo "  Reason: Docker mounts '$WORKSPACE_ROOT' to '/workdir'"
-    echo "  But your app is at '$APP_ABS_PATH' (Outside mount point)"
+    echo -e "${RED}Error: App must be inside workspace ($WORKSPACE_ROOT).${NC}"
     exit 1
-else
-    echo "✅ Check passed: App is inside Workspace."
 fi
 
-# 3. Calculate the Relative Path for Docker
-# This removes the WORKSPACE_ROOT prefix from APP_ABS_PATH
+# Calculate relative path for Docker
 DOCKER_APP_PATH=".${APP_ABS_PATH#$WORKSPACE_ROOT}"
 
-echo "Calculated Path for Docker:    $DOCKER_APP_PATH"
-echo -e "${YELLOW}--- [DEBUG] Resolution Complete ---${NC}"
-echo ""
+# --- BUILD COMMAND CONSTRUCTION ---
+
+# CRITICAL FIX: We explicitly tell CMake where the board root is.
+# We point BOARD_ROOT to the application directory (where 'boards/' is located).
+BOARD_ROOT_FLAG="-DBOARD_ROOT=$DOCKER_APP_PATH"
+
+if [ $DO_CHECK -eq 1 ]; then
+    MODE="CI CHECK (Twister)"
+    # Twister uses --board-root directly
+    CMD="west twister -T $DOCKER_APP_PATH -p $TARGET_BOARD --board-root $DOCKER_APP_PATH --integration"
+else
+    MODE="BUILD (West)"
+    # West Build passes CMake args after '--'
+    CMD="west build -p always -b $TARGET_BOARD $DOCKER_APP_PATH -- $BOARD_ROOT_FLAG"
+fi
 
 echo "=========================================="
-echo "🚀 Building Board: $TARGET_BOARD"
-echo "📂 App Directory:  $DOCKER_APP_PATH"
+echo "Mode:   $MODE"
+echo "Board:  $TARGET_BOARD"
+echo "App:    $DOCKER_APP_PATH"
+echo "Root:   Using Board Root -> $DOCKER_APP_PATH"
 echo "=========================================="
 
-# 4. Pull Image
-echo -e "${YELLOW}[DEBUG] Checking for Docker image updates...${NC}"
-docker pull zephyrprojectrtos/zephyr-build:latest
+echo -e "${YELLOW}[DEBUG] Pulling Docker Image...${NC}"
+docker pull zephyrprojectrtos/zephyr-build:latest > /dev/null
 
-# 5. Run Docker
-echo -e "${YELLOW}[DEBUG] Executing Docker Command:${NC}"
-echo "docker run --rm -v $WORKSPACE_ROOT:/workdir -w /workdir ... west build -b $TARGET_BOARD $DOCKER_APP_PATH"
+echo -e "${YELLOW}[DEBUG] Running inside Docker:${NC}"
+echo "$CMD"
 
 docker run --rm \
     -v "$WORKSPACE_ROOT":/workdir \
@@ -93,14 +92,18 @@ docker run --rm \
     -u "$(id -u):$(id -g)" \
     -e HOME=/workdir \
     zephyrprojectrtos/zephyr-build:latest \
-    west build -p always -b "$TARGET_BOARD" "$DOCKER_APP_PATH"
+    /bin/bash -c "$CMD"
 
 if [ $? -eq 0 ]; then
     echo ""
-    echo -e "${GREEN}✅ Build Successful!${NC}"
-    echo "Artifacts located in: $APP_INPUT/build/zephyr/"
+    echo -e "${GREEN}✅ $MODE Successful!${NC}"
+    if [ $DO_CHECK -eq 1 ]; then
+        echo "Report: $WORKSPACE_ROOT/twister-out/twister.html"
+    fi
 else
     echo ""
-    echo -e "${RED}❌ Build Failed.${NC}"
+    echo -e "${RED}❌ $MODE Failed.${NC}"
+    # Help the user debug if it fails
+    echo "Tip: If 'Board not found' persists, ensure $DOCKER_APP_PATH/boards exists."
     exit 1
 fi
